@@ -208,6 +208,7 @@ func TestMultipleEvents(t *testing.T) {
 func TestGenericCallbacks(t *testing.T) {
 	beforeEvent := false
 	leaveState := false
+	beforeState := false
 	enterState := false
 	afterEvent := false
 
@@ -223,6 +224,9 @@ func TestGenericCallbacks(t *testing.T) {
 			"leave_state": func(_ context.Context, e *Event) {
 				leaveState = true
 			},
+			"before_enter_state": func(_ context.Context, e *Event) {
+				beforeState = true
+			},
 			"enter_state": func(_ context.Context, e *Event) {
 				enterState = true
 			},
@@ -236,13 +240,14 @@ func TestGenericCallbacks(t *testing.T) {
 	if err != nil {
 		t.Errorf("transition failed %v", err)
 	}
-	if !(beforeEvent && leaveState && enterState && afterEvent) {
+	if !(beforeEvent && leaveState && beforeState && enterState && afterEvent) {
 		t.Error("expected all callbacks to be called")
 	}
 }
 
 func TestSpecificCallbacks(t *testing.T) {
 	beforeEvent := false
+	beforeState := false
 	leaveState := false
 	enterState := false
 	afterEvent := false
@@ -259,6 +264,9 @@ func TestSpecificCallbacks(t *testing.T) {
 			"leave_start": func(_ context.Context, e *Event) {
 				leaveState = true
 			},
+			"before_enter_end": func(_ context.Context, e *Event) {
+				beforeState = true
+			},
 			"enter_end": func(_ context.Context, e *Event) {
 				enterState = true
 			},
@@ -272,7 +280,7 @@ func TestSpecificCallbacks(t *testing.T) {
 	if err != nil {
 		t.Errorf("transition failed %v", err)
 	}
-	if !(beforeEvent && leaveState && enterState && afterEvent) {
+	if !(beforeEvent && leaveState && beforeState && enterState && afterEvent) {
 		t.Error("expected all callbacks to be called")
 	}
 }
@@ -359,6 +367,42 @@ func TestCancelBeforeSpecificEvent(t *testing.T) {
 		},
 		Callbacks{
 			"before_run": func(_ context.Context, e *Event) {
+				e.Cancel()
+			},
+		},
+	)
+	_ = fsm.Event(context.Background(), "run")
+	if fsm.Current() != "start" {
+		t.Error("expected state to be 'start'")
+	}
+}
+
+func TestCancelBeforeGenericState(t *testing.T) {
+	fsm := NewFSM(
+		"start",
+		Events{
+			{Name: "run", Src: []string{"start"}, Dst: "end"},
+		},
+		Callbacks{
+			"before_enter_state": func(_ context.Context, e *Event) {
+				e.Cancel()
+			},
+		},
+	)
+	_ = fsm.Event(context.Background(), "run")
+	if fsm.Current() != "start" {
+		t.Error("expected state to be 'start'")
+	}
+}
+
+func TestCancelBeforeSpecificState(t *testing.T) {
+	fsm := NewFSM(
+		"start",
+		Events{
+			{Name: "run", Src: []string{"start"}, Dst: "end"},
+		},
+		Callbacks{
+			"before_enter_end": func(_ context.Context, e *Event) {
 				e.Cancel()
 			},
 		},

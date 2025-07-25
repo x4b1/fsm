@@ -109,13 +109,17 @@ type Callbacks map[string]Callback
 //
 // 4. leave_state - called before leaving all states
 //
-// 5. enter_<NEW_STATE> - called after entering <NEW_STATE>
+// 5. before_enter_<NEW_STATE> - called before entering <NEW_STATE>
 //
-// 6. enter_state - called after entering all states
+// 6. before_enter_state - called before entering all states
 //
-// 7. after_<EVENT> - called after event named <EVENT>
+// 7. enter_<NEW_STATE> - called after entering <NEW_STATE>
 //
-// 8. after_event - called after all events
+// 8. enter_state - called after entering all states
+//
+// 9. after_<EVENT> - called after event named <EVENT>
+//
+// 10. after_event - called after all events
 //
 // There are also two short form versions for the most commonly used callbacks.
 // They are simply the name of the event or state:
@@ -155,6 +159,14 @@ func NewFSM(initial string, events []EventDesc, callbacks map[string]Callback) *
 		var callbackType int
 
 		switch {
+		case strings.HasPrefix(name, "before_enter_"):
+			target = strings.TrimPrefix(name, "before_enter_")
+			if target == "state" {
+				target = ""
+				callbackType = callbackBeforeState
+			} else if _, ok := allStates[target]; ok {
+				callbackType = callbackBeforeState
+			}
 		case strings.HasPrefix(name, "before_"):
 			target = strings.TrimPrefix(name, "before_")
 			if target == "event" {
@@ -353,6 +365,13 @@ func (f *FSM) Event(ctx context.Context, event string, args ...interface{}) erro
 				return
 			}
 
+			if err := f.beforeStateCallbacks(ctx, e); err != nil {
+				if e.Err == nil {
+					e.Err = err
+				}
+				return
+			}
+
 			f.stateMu.Lock()
 			f.current = dst
 			f.transition = nil // treat the state transition as done
@@ -447,6 +466,24 @@ func (f *FSM) beforeEventCallbacks(ctx context.Context, e *Event) error {
 	return nil
 }
 
+// beforeStateCallbacks calls the before_enter_ callbacks, first the named then the
+// general version.
+func (f *FSM) beforeStateCallbacks(ctx context.Context, e *Event) error {
+	if fn, ok := f.callbacks[cKey{e.Dst, callbackBeforeState}]; ok {
+		fn(ctx, e)
+		if e.canceled {
+			return CanceledError{e.Err}
+		}
+	}
+	if fn, ok := f.callbacks[cKey{"", callbackBeforeState}]; ok {
+		fn(ctx, e)
+		if e.canceled {
+			return CanceledError{e.Err}
+		}
+	}
+	return nil
+}
+
 // leaveStateCallbacks calls the leave_ callbacks, first the named then the
 // general version.
 func (f *FSM) leaveStateCallbacks(ctx context.Context, e *Event) error {
@@ -495,6 +532,7 @@ const (
 	callbackNone int = iota
 	callbackBeforeEvent
 	callbackLeaveState
+	callbackBeforeState
 	callbackEnterState
 	callbackAfterEvent
 )
